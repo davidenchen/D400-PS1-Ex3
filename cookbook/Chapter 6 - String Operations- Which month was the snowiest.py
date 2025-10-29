@@ -2,6 +2,10 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import polars as pl
+import altair as alt
+
+alt.data_transformers.disable_max_rows()
 
 plt.style.use("ggplot")
 plt.rcParams["figure.figsize"] = (15, 3)
@@ -15,8 +19,12 @@ weather_2012 = pd.read_csv(
 )
 weather_2012[:5]
 
-# TODO: load the data using polars and call the data frame pl_wather_2012
-
+#%%
+# TODO: load the data using polars and call the data frame pl_weather_2012
+pl_weather = pl.read_csv(
+    "../data/weather_2012.csv",
+    try_parse_dates=True
+)
 
 # %%
 # You'll see that the 'Weather' column has a text description of the weather that was going on each hour. We'll assume it's snowing if the text description contains "Snow".
@@ -29,7 +37,13 @@ is_snowing = is_snowing.astype(float)
 is_snowing.plot()
 plt.show()
 
+#%%
 # TODO: do the same with polars
+pl_snow = pl_weather.with_columns(
+    (pl.col("weather").str.contains("Snow").cast(pl.Int8)).alias("snowing")
+)
+pl_snow.plot.line(x = "date_time", y = "snowing")
+
 
 
 # %%
@@ -39,7 +53,10 @@ plt.show()
 
 # Unsurprisingly, July and August are the warmest.
 
+#%%
 # TODO: and now in Polars
+median_temps = pl_weather.group_by_dynamic("date_time", every = "1mo").agg(pl.col("temperature_c").median())
+median_temps.plot.bar(x = "date_time", y = "temperature_c")
 
 
 # %%
@@ -51,5 +68,9 @@ is_snowing.astype(float).resample("M").apply(np.mean).plot(kind="bar")
 plt.show()
 
 # So now we know! In 2012, December was the snowiest month. Also, this graph suggests something that I feel -- it starts snowing pretty abruptly in November, and then tapers off slowly and takes a long time to stop, with the last snow usually being in April or May.
-
+#%%
 # TODO: please do the same in Polars
+pl_snow = pl_snow.with_columns(pl.col("snowing").cast(pl.Float32))
+snow_prop = pl_snow.group_by_dynamic("date_time", every = "1mo").agg(pl.col("snowing").mean())
+
+snow_prop.plot.line(x = "date_time", y = "snowing")
