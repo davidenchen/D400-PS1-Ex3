@@ -2,10 +2,14 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import polars as pl
+import altair as alt
 
 plt.style.use("ggplot")
 plt.rcParams["figure.figsize"] = (15, 3)
 plt.rcParams["font.family"] = "sans-serif"
+
+alt.data_transformers.disable_max_rows()
 
 # %%
 # By the end of this chapter, we're going to have downloaded all of Canada's weather data for 2012, and saved it to a CSV. We'll do this by downloading it one month at a time, and then combining all the months together.
@@ -15,7 +19,10 @@ weather_2012_final = pd.read_csv("../data/weather_2012.csv", index_col="date_tim
 weather_2012_final["temperature_c"].plot(figsize=(15, 6))
 plt.show()
 
+#%%
 # TODO: rewrite using Polars
+weather = pl.read_csv("../data/weather_2012.csv", try_parse_dates=True)
+weather.plot.line(x = "date_time", y = "temperature_c")
 
 # %%
 # Okay, let's start from the beginning.
@@ -26,7 +33,7 @@ plt.show()
 
 
 # This URL has to be fixed first!
-url_template = "http://climate.weather.gc.ca/climateData/bulkdata_e.html?format=csv&stationID=5415&Year={year}&Month={month}&timeframe=1&submit=Download+Data"
+url_template = "http://climate.weather.gc.ca/climate_data/bulk_data_e.html?format=csv&stationID=5415&Year={year}&Month={month}&timeframe=1&submit=Download+Data"
 
 year = 2012
 month = 3
@@ -40,8 +47,15 @@ weather_mar2012 = pd.read_csv(
 )
 weather_mar2012.head()
 
+#%%
 # TODO: rewrite using Polars. Yes, Polars can handle URLs similarly.
-
+pl_weather = pl.read_csv(
+    url_march,
+    try_parse_dates=True,
+    encoding = "latin1",
+    null_values = [""]
+)
+pl_weather.head()
 
 # %%
 # Let's clean up the data a bit.
@@ -52,8 +66,14 @@ weather_mar2012[:5]
 
 # This is much better now -- we only have columns with real data.
 
+#%%
 # TODO: rewrite using Polars
-
+null_cols = [
+    col
+    for col in pl_weather.columns
+    if pl_weather[col].null_count() > 0
+]
+pl_weather = pl_weather.drop(null_cols)
 
 # %%
 # Let's get rid of columns that we do not need.
@@ -62,7 +82,9 @@ weather_mar2012[:5]
 weather_mar2012 = weather_mar2012.drop(["Year", "Month", "Day", "Time (LST)"], axis=1)
 weather_mar2012[:5]
 
+#%%
 # TODO: redo this using polars
+pl_weather = pl_weather.drop(["Year", "Month", "Day", "Time (LST)"])
 
 # %%
 # When you look at the data frame, you see that some column names have some weird characters in them.
@@ -78,8 +100,11 @@ weather_mar2012.columns = weather_mar2012.columns.str.replace(
     "Â", ""
 )  # Remove the weird characters at the
 
+#%%
 # TODO: rewrite using Polars
+pl_weather.columns = [col.replace('ï»¿"', "") for col in pl_weather.columns]
 
+pl_weather.columns = [col.replace('Â', "") for col in pl_weather.columns]
 
 # %%
 # Optionally, you can also rename columns more manually for specific cases:
@@ -107,14 +132,36 @@ print(weather_mar2012.columns)
 weather_mar2012.columns = weather_mar2012.columns.str.lower()
 print(weather_mar2012.columns)
 
+#%%
 # TODO: redo this using polars
+pl_weather = pl_weather.rename(
+    {
+        'Longitude (x)"': "Longitude",
+        "Latitude (y)": "Latitude",
+        "Station Name": "Station_Name",
+        "Climate ID": "Climate_ID",
+        "Temp (°C)": "Temperature_C",
+        "Dew Point Temp (°C)": "Dew_Point_Temp_C",
+        "Rel Hum (%)": "Relative_Humidity",
+        "Wind Spd (km/h)": "Wind_Speed_kmh",
+        "Visibility (km)": "Visibility_km",
+        "Stn Press (kPa)": "Station_Pressure_kPa",
+        "Weather": "Weather",
+        "Date/Time (LST)": "Date_Time"
+    }
+)
+
+#%%
+pl_weather.columns = [col.lower() for col in pl_weather.columns]
 
 # %%
 # Notice how it goes up to 25° C in the middle there? That was a big deal. It was March, and people were wearing shorts outside.
 weather_mar2012["temperature_c"].plot(figsize=(15, 5))
 plt.show()
 
+#%%
 # TODO: redo this using polars
+pl_weather.plot.line(x = "date_time", y = "temperature_c")
 
 # %%
 # This one's just for fun -- we've already done this before, using groupby and aggregate! We will learn whether or not it gets colder at night. Well, obviously. But let's do it anyway.
@@ -126,7 +173,12 @@ plt.show()
 
 # So it looks like the time with the highest median temperature is 2pm. Neat.
 
+#%%
 # TODO: redo this using polars
+pl_weather = pl_weather.with_columns((pl.col("date_time").dt.hour()).alias("hour"))
+median_temps = pl_weather.group_by("hour").agg(pl.col("temperature_c").median())
+
+median_temps.plot.line(x = "hour", y = "temperature_c")
 
 # %%
 # Okay, so what if we want the data for the whole year? Ideally the API would just let us download that, but I couldn't figure out a way to do that.
@@ -179,10 +231,68 @@ data_by_month = [download_weather_month(2012, i) for i in range(1, 13)]
 weather_2012 = pd.concat(data_by_month)
 weather_2012.head()
 
+#%%
 # TODO: do the same with polars
+
+def pl_clean(data):
+
+    # Drop cols with missing data
+    null_cols = [
+        col
+        for col in data.columns
+        if data[col].null_count() > 0
+    ]
+    data = data.drop(null_cols)
+
+    # Drop some other cols
+    data = data.drop(["Year", "Month", "Day", "Time (LST)"])
+
+    # Clean column names
+    data.columns = [col.replace('ï»¿"', "") for col in data.columns]
+    data.columns = [col.replace('Â', "") for col in data.columns]
+
+    data = data.rename(
+        {
+            'Longitude (x)"': "Longitude",
+            "Latitude (y)": "Latitude",
+            "Station Name": "Station_Name",
+            "Climate ID": "Climate_ID",
+            "Temp (°C)": "Temperature_C",
+            "Dew Point Temp (°C)": "Dew_Point_Temp_C",
+            "Rel Hum (%)": "Relative_Humidity",
+            "Wind Spd (km/h)": "Wind_Speed_kmh",
+            "Visibility (km)": "Visibility_km",
+            "Stn Press (kPa)": "Station_Pressure_kPa",
+            "Weather": "Weather",
+            "Date/Time (LST)": "Date_Time"
+        }
+    )
+    data.columns = [col.lower() for col in data.columns]
+    return data
+
+
+def pl_download(year, month):
+    url_template = "http://climate.weather.gc.ca/climate_data/bulk_data_e.html?format=csv&stationID=5415&Year={year}&Month={month}&timeframe=1&submit=Download+Data"
+    url = url_template.format(year=year, month=month)
+    weather_data = pl.read_csv(
+        url,
+        try_parse_dates=True,
+        encoding = "latin1",
+        null_values = [""]
+    )
+    print(f"Downloaded data for year {year}, month {month}")
+    weather_data_clean = pl_clean(weather_data)
+    return weather_data_clean
+
+#%%
+pl_data = [pl_download(2012, i) for i in range(1, 13)]
+data_2012 = pl.concat(pl_data)
+data_2012.head()
+
 
 # %%
 # Now, let's save the data.
 weather_2012.to_csv("../data/weather_2012.csv")
 
 # TODO: use polars to save the data.
+data_2012.write_csv("../data/weather_2012_polars.csv")

@@ -1,7 +1,8 @@
 # %%
 import pandas as pd
 import matplotlib.pyplot as plt
-
+import polars as pl
+import altair as alt
 
 # %%
 # Reading data from a csv file
@@ -14,13 +15,13 @@ import matplotlib.pyplot as plt
 broken_df = pd.read_csv("../data/bikes.csv", encoding="ISO-8859-1")
 
 # TODO: please load the data with the Polars library (do not forget to import Polars at the top of the script) and call it pl_broken_df
-
+df = pl.read_csv("../data/bikes.csv", encoding="ISO-8859-1")
 # %%
 # Look at the first 3 rows
 broken_df[:3]
 
 # TODO: do the same with your polars data frame, pl_broken_df
-
+df[:3]
 # %%
 # You'll notice that this is totally broken! `read_csv` has a bunch of options that will let us fix that, though. Here we'll
 
@@ -39,9 +40,15 @@ fixed_df = pd.read_csv(
     index_col="Date",
 )
 fixed_df[:3]
-
+#%%
 # TODO: do the same (or similar) with polars
-
+df = pl.read_csv(
+    "../data/bikes.csv",
+    separator = ";",
+    encoding = "latin1",
+    try_parse_dates = True
+)
+df.head()
 
 # %%
 # Selecting a column
@@ -50,14 +57,21 @@ fixed_df[:3]
 # Here's an example:
 fixed_df["Berri 1"]
 
+#%%
 # TODO: how would you do this with a Polars data frame?
+df.select("Berri 1")
 
 
 # %%
 # Plotting is quite easy in Pandas
 fixed_df["Berri 1"].plot()
 
+#%%
 # TODO: how would you do this with a Polars data frame?
+df.plot.line(
+    x = "Date",
+    y = "Berri 1"
+)
 
 
 # %%
@@ -66,4 +80,16 @@ fixed_df["Berri 1"].plot()
 
 fixed_df.plot(figsize=(15, 10))
 
+#%%
 # TODO: how would you do this with a Polars data frame? With Polars data frames you might have to use the Seaborn library and it mmight not work out of the box as with pandas.
+cols = [col for col in df.columns if col not in ["Date", "St-Urbain (données non disponibles)"]]
+
+long_df = df.unpivot(on = cols, index = "Date")
+long_df = long_df.with_columns(long_df["value"].str.to_integer())
+
+alt.Chart(long_df).mark_line().encode(
+    x = "Date",
+    y = "value",
+    color = "variable",
+    strokeWidth = alt.value(1)
+)
